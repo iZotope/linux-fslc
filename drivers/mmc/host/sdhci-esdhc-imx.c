@@ -183,9 +183,12 @@ static struct esdhc_soc_data usdhc_imx6q_data = {
 	.flags = ESDHC_FLAG_USDHC | ESDHC_FLAG_MAN_TUNING,
 };
 
+/* Murata -- suggested temporary workound from Freescale.  After invoking "insmod bcmdhd.ko" */
+/* followed by "ifconfig wlan0 up", WLAN driver crashes on SoloLite SD1 slot. */
 static struct esdhc_soc_data usdhc_imx6sl_data = {
 	.flags = ESDHC_FLAG_USDHC | ESDHC_FLAG_STD_TUNING
-			| ESDHC_FLAG_HAVE_CAP1 | ESDHC_FLAG_ERR004536
+//			| ESDHC_FLAG_HAVE_CAP1 | ESDHC_FLAG_ERR004536
+			| ESDHC_FLAG_HAVE_CAP1
 			| ESDHC_FLAG_HS200 | ESDHC_FLAG_BUSFREQ,
 };
 

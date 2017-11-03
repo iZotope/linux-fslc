@@ -1,0 +1,20 @@
+#
+# iZotope Gamut platform specific drivers
+#
+
+menuconfig GAMUT_DRIVERS
+	bool "Gamut Drivers"
+	help
+	  Say Y to enable support for iZotope Gamut specific drivers.
+
+if GAMUT_DRIVERS
+
+config GAMUT_UI
+	tristate "Gamut front panel/UI driver"
+	# possibly others and others
+	depends on SPI && GPIOLIB
+	help
+	  This is a driver for the Atmel chip on Gamut's front panel. It handles
+	  the communication and presents the LEDs and buttons to userspace.
+
+endif # GAMUT_DRIVERS

@@ -1,0 +1,9 @@
+
+define dmesg
+    set $msg = (struct printk_log*)log_buf
+    while($msg->len)
+        set $str = (char*)$msg + sizeof(struct printk_log)
+        printf "%s\n", $str
+        set $msg = (struct printk_log*)((char*)$msg + $msg->len)
+    end
+end

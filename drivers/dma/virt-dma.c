@@ -95,6 +95,19 @@ static void vchan_complete(unsigned long arg)
 	}
 }
 
+/*
+ * vchan_cyclic_callback - synchronously handle the completion of a period
+ * vd: virtual descriptor
+ */
+void vchan_cyclic_callback_synch(struct virt_dma_desc *vd)
+{
+	struct virt_dma_chan *vc = to_virt_chan(vd->tx.chan);
+
+	vc->cyclic = vd;
+	vchan_complete((unsigned long)vc);
+}
+EXPORT_SYMBOL_GPL(vchan_cyclic_callback_synch);
+
 void vchan_dma_desc_free_list(struct virt_dma_chan *vc, struct list_head *head)
 {
 	while (!list_empty(head)) {

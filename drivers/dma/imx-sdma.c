@@ -4,6 +4,7 @@
  * This file contains a driver for the Freescale Smart DMA engine
  *
  * Copyright 2010 Sascha Hauer, Pengutronix <s.hauer@pengutronix.de>
+ * Copyright (C) 2016-2017, iZotope inc. <mcampbell@izotope.inc>
  *
  * Based on code from Freescale:
  *
@@ -408,7 +409,7 @@ struct sdma_engine {
 	struct dma_device		dma_device;
 	struct clk			*clk_ipg;
 	struct clk			*clk_ahb;
-	spinlock_t			channel_0_lock;
+	raw_spinlock_t			channel_0_lock;
 	u32				script_number;
 	struct sdma_script_start_addrs	*script_addrs;
 	const struct sdma_driver_data	*drvdata;
@@ -700,7 +701,7 @@ static int sdma_load_script(struct sdma_engine *sdma, void *buf, int size,
 			return -ENOMEM;
 	}
 
-	spin_lock_irqsave(&sdma->channel_0_lock, flags);
+	raw_spin_lock_irqsave(&sdma->channel_0_lock, flags);
 
 	bd0->mode.command = C0_SETPM;
 	bd0->mode.status = BD_DONE | BD_INTR | BD_WRAP | BD_EXTD;
@@ -712,7 +713,7 @@ static int sdma_load_script(struct sdma_engine *sdma, void *buf, int size,
 
 	ret = sdma_run_channel0(sdma);
 
-	spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
+	raw_spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
 
 	if (use_iram)
 		gen_pool_free(sdma->iram_pool, (unsigned long)buf_virt, size);
@@ -828,7 +829,18 @@ static irqreturn_t sdma_int_handler(int irq, void *dev_id)
 		desc = sdmac->desc;
 		if (desc) {
 			if (sdmac->flags & IMX_DMA_SG_LOOP) {
-				vchan_cyclic_callback(&desc->vd);
+				switch (sdmac->peripheral_type) {
+                case IMX_DMATYPE_SSI:
+                case IMX_DMATYPE_SSI_DUAL:
+                case IMX_DMATYPE_SSI_SP:
+                	spin_unlock(&sdmac->vc.lock);
+					vchan_cyclic_callback_synch(&desc->vd);
+					spin_lock(&sdmac->vc.lock);
+					break;
+				default:
+					vchan_cyclic_callback(&desc->vd);
+					break;
+				}
 			} else {
 				mxc_sdma_handle_channel_normal(sdmac);
 				vchan_cookie_complete(&desc->vd);
@@ -979,7 +991,7 @@ static int sdma_load_context(struct sdma_channel *sdmac)
 	dev_dbg(sdma->dev, "event_mask0 = 0x%08x\n", (u32)sdmac->event_mask[0]);
 	dev_dbg(sdma->dev, "event_mask1 = 0x%08x\n", (u32)sdmac->event_mask[1]);
 
-	spin_lock_irqsave(&sdma->channel_0_lock, flags);
+	raw_spin_lock_irqsave(&sdma->channel_0_lock, flags);
 
 	memset(context, 0, sizeof(*context));
 	context->channel_state.pc = load_address;
@@ -1005,7 +1017,7 @@ static int sdma_load_context(struct sdma_channel *sdmac)
 	bd0->ext_buffer_addr = 2048 + (sizeof(*context) / 4) * channel;
 	ret = sdma_run_channel0(sdma);
 
-	spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
+	raw_spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
 
 	sdmac->context_loaded = true;
 
@@ -1019,7 +1031,7 @@ static int sdma_save_restore_context(struct sdma_engine *sdma, bool save)
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&sdma->channel_0_lock, flags);
+	raw_spin_lock_irqsave(&sdma->channel_0_lock, flags);
 
 	if (save)
 		bd0->mode.command = C0_GETDM;
@@ -1032,7 +1044,7 @@ static int sdma_save_restore_context(struct sdma_engine *sdma, bool save)
 	bd0->ext_buffer_addr = 2048;
 	ret = sdma_run_channel0(sdma);
 
-	spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
+	raw_spin_unlock_irqrestore(&sdma->channel_0_lock, flags);
 
 	return ret;
 }
@@ -2152,7 +2164,7 @@ static int sdma_probe(struct platform_device *pdev)
 	if (!sdma)
 		return -ENOMEM;
 
-	spin_lock_init(&sdma->channel_0_lock);
+	raw_spin_lock_init(&sdma->channel_0_lock);
 
 	sdma->dev = &pdev->dev;
 	sdma->drvdata = drvdata;
@@ -2179,6 +2191,12 @@ static int sdma_probe(struct platform_device *pdev)
 
 	ret = devm_request_irq(&pdev->dev, irq, sdma_int_handler, 0, "sdma",
 			       sdma);
+	/* It appears the SDMA core (or atleast the SDMA_H_EVTERR, the channel
+	 * error bitfied) does not get reset at a cold poweron. Do a software
+	 * triggered reset here to get in a consistant state
+	 */
+	writel(0x1, sdma->regs + SDMA_H_RESET);
+
 	if (ret)
 		return ret;
 

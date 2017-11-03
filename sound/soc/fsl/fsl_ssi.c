@@ -4,6 +4,7 @@
  * Author: Timur Tabi <timur@freescale.com>
  *
  * Copyright 2007-2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2016-2017, iZotope inc.
  *
  * This file is licensed under the terms of the GNU General Public License
  * version 2.  This program is licensed "as is" without any warranty of any
@@ -240,6 +241,9 @@ struct fsl_ssi_private {
 	struct clk *baudclk;
 	unsigned int baudclk_streams;
 	unsigned int bitclk_freq;
+
+	struct snd_pcm_substream *playback_stream;
+	struct snd_pcm_substream *capture_stream;
 
 	/*regcache for SFCSR*/
 	u32 regcache_sfcsr;
@@ -502,10 +506,28 @@ static void fsl_ssi_config(struct fsl_ssi_private *ssi_private, bool enable,
 
 config_done:
 	/* Enabling of subunits is done after configuration */
-	if (enable)
+	if (enable) {
 		regmap_update_bits(regs, CCSR_SSI_SCR, vals->scr, vals->scr);
+	}
 }
 
+static void prefill_tx_fifos(struct fsl_ssi_private *ssi_private) {
+	u32 txfifo_level;
+	u32 sfcsr;
+	struct regmap *regs = ssi_private->regs;
+	u32 fill_depth = ssi_private->fifo_depth;
+	
+	regmap_read(regs, CCSR_SSI_SFCSR, &sfcsr);
+	txfifo_level = CCSR_SSI_SFCSR_TFCNT0(sfcsr);
+
+	while (txfifo_level < fill_depth) {
+		regmap_write(regs, CCSR_SSI_STX0, 0);
+		if (ssi_private->use_dual_fifo) {
+			regmap_write(regs, CCSR_SSI_STX1, 0);
+		}
+		txfifo_level++;
+	}
+}
 
 static void fsl_ssi_rx_config(struct fsl_ssi_private *ssi_private, bool enable)
 {
@@ -515,6 +537,51 @@ static void fsl_ssi_rx_config(struct fsl_ssi_private *ssi_private, bool enable)
 static void fsl_ssi_tx_config(struct fsl_ssi_private *ssi_private, bool enable)
 {
 	fsl_ssi_config(ssi_private, enable, &ssi_private->rxtx_reg_val.tx);
+
+	if (enable) {
+		prefill_tx_fifos(ssi_private);
+	}
+}
+
+/**
+*  Simultaneously enable or disable tx and rx for linked streams.
+*  This currently does not support online reconfiguration. 
+*  Both streams must be disabled before enabling.
+**/
+static void fsl_ssi_rxtx_linked_config(struct fsl_ssi_private *ssi_private, bool enable)
+{
+	struct regmap *regs = ssi_private->regs;
+	struct fsl_ssi_reg_val *rx_reg;
+	struct fsl_ssi_reg_val *tx_reg;
+
+	tx_reg = &ssi_private->rxtx_reg_val.tx;
+	rx_reg = &ssi_private->rxtx_reg_val.rx;
+
+	if (enable) {
+		u32 scr_val;
+		u32 nr_active_streams;
+
+		regmap_read(regs, CCSR_SSI_SCR, &scr_val);
+
+		nr_active_streams = !!(scr_val & CCSR_SSI_SCR_TE) + !!(scr_val & CCSR_SSI_SCR_RE);
+
+		if (nr_active_streams == 0) {
+			// Need to set SSIEN before writing to STXn in the prefill stage
+			regmap_update_bits(regs, CCSR_SSI_SCR, CCSR_SSI_SCR_SSIEN, CCSR_SSI_SCR_SSIEN);
+			regmap_update_bits(regs, CCSR_SSI_STCR, tx_reg->stcr | rx_reg->stcr, tx_reg->stcr | rx_reg->stcr);
+
+			prefill_tx_fifos(ssi_private);
+
+			regmap_update_bits(regs, CCSR_SSI_SIER, tx_reg->sier | rx_reg->sier, tx_reg->sier | rx_reg->sier);
+			regmap_update_bits(regs, CCSR_SSI_SRCR, tx_reg->srcr | rx_reg->srcr, tx_reg->srcr | rx_reg->srcr);
+			regmap_update_bits(regs, CCSR_SSI_SCR, tx_reg->scr | rx_reg->scr, tx_reg->scr | rx_reg->scr);
+		}
+	} else {
+		regmap_update_bits(regs, CCSR_SSI_SCR, tx_reg->scr | rx_reg->scr, 0);
+		regmap_update_bits(regs, CCSR_SSI_SRCR, tx_reg->srcr | rx_reg->srcr, 0);
+		regmap_update_bits(regs, CCSR_SSI_STCR, tx_reg->stcr | rx_reg->stcr, 0);
+		regmap_update_bits(regs, CCSR_SSI_SIER, tx_reg->sier | rx_reg->sier, 0);
+	}
 }
 
 /*
@@ -599,6 +666,12 @@ static int fsl_ssi_startup(struct snd_pcm_substream *substream,
 		snd_soc_dai_get_drvdata(rtd->cpu_dai);
 	int ret;
 
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		ssi_private->playback_stream = substream;
+	} else {
+		ssi_private->capture_stream = substream;
+	}
+
 	ret = clk_prepare_enable(ssi_private->clk);
 	if (ret)
 		return ret;
@@ -627,6 +700,12 @@ static void fsl_ssi_shutdown(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct fsl_ssi_private *ssi_private =
 		snd_soc_dai_get_drvdata(rtd->cpu_dai);
+
+	if (substream == ssi_private->playback_stream) {
+		ssi_private->playback_stream = NULL;
+	} else {
+		ssi_private->capture_stream = NULL;
+	}
 
 	pm_runtime_put_sync(dai->dev);
 
@@ -1000,7 +1079,7 @@ static int _fsl_ssi_set_dai_fmt(struct device *dev,
 	 */
 	if (ssi_private->use_dma)
 		wm = ssi_private->fifo_depth - 2;
-	else
+	else 
 		wm = ssi_private->fifo_depth;
 
 	regmap_write(regs, CCSR_SSI_SFCSR,
@@ -1090,11 +1169,26 @@ static int fsl_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 	struct fsl_ssi_private *ssi_private = snd_soc_dai_get_drvdata(rtd->cpu_dai);
 	struct regmap *regs = ssi_private->regs;
 
+
+	bool playback_capture_linked = false;
+	if (ssi_private->playback_stream && ssi_private->capture_stream) {
+		bool is_playback_and_linked =
+			substream == ssi_private->playback_stream &&
+			substream->group == ssi_private->capture_stream->group;
+		bool is_capture_and_linked =
+			substream == ssi_private->capture_stream &&
+			substream->group == ssi_private->playback_stream->group;
+		playback_capture_linked =
+			is_capture_and_linked || is_playback_and_linked;
+	}
+
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		if (playback_capture_linked)
+			fsl_ssi_rxtx_linked_config(ssi_private, true);
+		else if (substream == ssi_private->playback_stream)
 			fsl_ssi_tx_config(ssi_private, true);
 		else
 			fsl_ssi_rx_config(ssi_private, true);
@@ -1103,7 +1197,9 @@ static int fsl_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		if (playback_capture_linked)
+			fsl_ssi_rxtx_linked_config(ssi_private, false);
+		else if (substream == ssi_private->playback_stream)
 			fsl_ssi_tx_config(ssi_private, false);
 		else
 			fsl_ssi_rx_config(ssi_private, false);
@@ -1114,7 +1210,7 @@ static int fsl_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 	}
 
 	if (fsl_ssi_is_ac97(ssi_private)) {
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		if (substream == ssi_private->playback_stream)
 			regmap_write(regs, CCSR_SSI_SOR, CCSR_SSI_SOR_TX_CLR);
 		else
 			regmap_write(regs, CCSR_SSI_SOR, CCSR_SSI_SOR_RX_CLR);

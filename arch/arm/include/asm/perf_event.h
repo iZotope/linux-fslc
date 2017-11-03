@@ -19,4 +19,12 @@ extern unsigned long perf_misc_flags(struct pt_regs *regs);
 #define perf_misc_flags(regs)	perf_misc_flags(regs)
 #endif
 
+#define perf_arch_fetch_caller_regs(regs, __ip) { \
+        register unsigned long sp asm ("sp"); \
+        (regs)->ARM_pc = (__ip); \
+        (regs)->ARM_fp = (unsigned long) __builtin_frame_address(0); \
+        (regs)->ARM_sp = sp; \
+        (regs)->ARM_cpsr = SVC_MODE; \
+}
+
 #endif /* __ARM_PERF_EVENT_H__ */

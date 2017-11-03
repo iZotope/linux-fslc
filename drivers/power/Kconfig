@@ -252,6 +252,12 @@ config BATTERY_TWL4030_MADC
 	  Say Y here to enable this dumb driver for batteries managed
 	  through the TWL4030 MADC.
 
+config CHARGER_FAN54063
+	tristate "Fairchild FAN54063 charger driver"
+	depends on I2C && GPIOLIB
+	help
+	  Say Y here to enabled support for Fairchild FAN54063 battery charger.
+
 config CHARGER_88PM860X
 	tristate "Marvell 88PM860x Charger driver"
 	depends on MFD_88PM860X && BATTERY_88PM860X

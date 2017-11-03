@@ -24,7 +24,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regulator/consumer.h>
 #include <linux/busfreq-imx.h>
-
+#include <linux/pinctrl/consumer.h>
 #include "ci.h"
 #include "ci_hdrc_imx.h"
 

@@ -8,6 +8,9 @@
 obj-y				+= irqchip/
 obj-y				+= bus/
 
+# Watchdog must come before everything so we can reboot if any driver panics
+obj-$(CONFIG_WATCHDOG)		+= watchdog/
+
 obj-$(CONFIG_GENERIC_PHY)	+= phy/
 
 # GPIO must come after pinctrl as gpios may need to mux pins etc
@@ -107,7 +110,6 @@ obj-$(CONFIG_W1)		+= w1/
 obj-$(CONFIG_POWER_SUPPLY)	+= power/
 obj-$(CONFIG_HWMON)		+= hwmon/
 obj-$(CONFIG_THERMAL)		+= thermal/
-obj-$(CONFIG_WATCHDOG)		+= watchdog/
 obj-$(CONFIG_MD)		+= md/
 obj-$(CONFIG_BT)		+= bluetooth/
 obj-$(CONFIG_ACCESSIBILITY)	+= accessibility/
@@ -166,3 +168,7 @@ obj-$(CONFIG_RAS)		+= ras/
 obj-$(CONFIG_THUNDERBOLT)	+= thunderbolt/
 obj-$(CONFIG_CORESIGHT)		+= hwtracing/coresight/
 obj-$(CONFIG_ANDROID)		+= android/
+
+
+# Gamut drivers
+obj-$(CONFIG_GAMUT_DRIVERS)	+= gamut/

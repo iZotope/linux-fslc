@@ -1,0 +1,729 @@
+/*
+ * Copyright (C) 2013-2014 Freescale Semiconductor, Inc.
+ * Copyright (C) 2017 iZotope, Inc. All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+/dts-v1/;
+
+/* TODO: convert all spaces to tabs... Atom is annoying like that */
+
+#include <dt-bindings/input/input.h>
+#include "imx6sl.dtsi"
+
+/ {
+	model = "Freescale i.MX6 SoloLite EVK Board";
+	compatible = "fsl,imx6sl-evk", "fsl,imx6sl";
+
+	aliases {
+	};
+
+	clocks {
+		anaclk1 {
+			compatible = "fixed-clock";
+			clock-frequency = <24576000>;
+		};
+	};
+
+	memory {
+		/* 256 MiB of RAM */
+		reg = <0x80000000 0x10000000>;
+	};
+
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/* CPU board USB power */
+		reg_usb_otg2_vbus: regulator@1 {
+			compatible = "regulator-fixed";
+			reg = <1>;
+			regulator-name = "usb_otg2_vbus";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			gpio = <&gpio4 2 0>;
+			enable-active-high;
+		};
+
+		/* Murata -- add wlreg_on definition.  WL_REG_ON not defined - signal driven by Ver 1.0 Adapter circuit. */
+		wlreg_on: fixedregulator@100 {
+			compatible = "regulator-fixed";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-name = "wlreg_on";
+			gpio = <&gpio3 29 0>; /* WL_REG_ON: SD3_DAT2 (gpio5_16) */
+			startup-delay-us = <100>; /* WL_REG_ON needs 61 usec delay */ 
+			regulator-always-on; 
+			enable-active-high;
+		};
+	};
+
+	sound {
+		compatible = "izotope,gamut-audio-ak4621";
+		cpu-dai = <&ssi2>;
+		audio-codec = <&codec>;
+		mux-int-port = <2>;
+		mux-ext-port = <3>;
+	};
+
+	/* Murata -- define hook for BCMDHD driver.  */
+	bcmdhd_wlan_0: bcmdhd_wlan@0 {
+		compatible = "android,bcmdhd_wlan";
+		/* WL_HOST_WAKE: SD3_DAT1 (gpio5 20); WL_REG_ON: SD3_DAT2 (gpio5 16) */
+		gpios = <&gpio3 25 0>, <&gpio3 29 0>;
+		wlreg_on-supply = <&wlreg_on>;
+	};
+};
+
+&audmux {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_audmux>;
+	status = "okay";
+};
+
+&clks {
+	assigned-clocks = <&clks IMX6SL_PLL4_BYPASS_SRC>,
+			  <&clks IMX6SL_PLL4_BYPASS>,
+			  <&clks IMX6SL_CLK_EXTERN_AUDIO_SEL>,
+			  <&clks IMX6SL_CLK_EXTERN_AUDIO>,
+			  <&clks IMX6SL_CLK_PLL4_POST_DIV>;
+	assigned-clock-parents = <&clks IMX6SL_CLK_LVDS1_IN>,
+				<&clks IMX6SL_PLL4_BYPASS_SRC>,
+				<&clks IMX6SL_CLK_PLL4_AUDIO_DIV>;
+	assigned-clock-rates = <1>, <1>, <0>, <24000000>,
+				<24576000>;
+};
+
+&cpu0 {
+/*
+	arm-supply = <&sw1a_reg>;
+	soc-supply = <&sw1c_reg>;
+*/
+	/* taken from imx6sl-evk-ldo.dts */
+	arm-supply = <&reg_arm>;
+	soc-supply = <&reg_soc>;
+};
+
+/* Generic power-off driver */
+&snvs_poweroff {
+	status = "okay";
+};
+
+/* SPI2: Audio board control */
+&ecspi2 {
+	fsl,spi-num-chipselects = <2>;
+	cs-gpios = <&gpio4 15 0>,
+				<&gpio1 27 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi2>;
+	status = "okay";
+
+	/* Forcibly disable DMA for SPI, as the SPI DMA 
+	   can interfere with audio DMA. */
+	/delete-property/ dma;
+	/delete-property/ dma-names;
+
+	preamp: that5173@0 {
+		status = "okay";
+		compatible = "that,that5173";
+		spi-max-frequency = <5000000>;
+		daisy-count = <2>;
+		gpio-rst = <&gpio2 0 0>;
+		reg = <0>;
+	};
+
+	codec: ak4621@1 {
+		status = "okay";
+		compatible = "asahi-kasei,ak4621";
+		spi-max-frequency = <10000000>;
+		gpio-pdn = <&gpio1 29 0>;
+		reg = <1>;
+	};
+};
+
+/* SPI3: SPI NOR boot flash */
+&ecspi3 {
+	fsl,spi-num-chipselects = <1>;
+	cs-gpios = <&gpio1 17 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi3>;
+	status = "okay";
+
+	/* Forcibly disable DMA for SPI, as the SPI DMA 
+	   can interfere with audio DMA. */
+	/delete-property/ dma;
+	/delete-property/ dma-names;
+};
+
+/* SPI4: Atmel UI Comms */
+&ecspi4 {
+	fsl,spi-num-chipselects = <1>;
+	cs-gpios = <&gpio1 9 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_ecspi4>;
+	status = "okay";
+
+	/* Forcibly disable DMA for SPI, as the SPI DMA 
+	   can interfere with audio DMA. */
+	/delete-property/ dma;
+	/delete-property/ dma-names;
+
+
+	atmelui: gamut-ui@0 {
+		status = "okay";
+		compatible = "izotope,gamut-ui";
+		spi-max-frequency = <400000>;
+		reg = <0>;
+		gpio-int = <&gpio2 15 0>;
+	};
+};
+
+&fec {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&pinctrl_fec>;
+	pinctrl-1 = <&pinctrl_fec_sleep>;
+	phy-mode = "rmii";
+	status = "okay";
+};
+
+&gpc {
+	/* use ldo-bypass, u-boot will check it and configure */
+	/* fsl,ldo-bypass = <1>; */
+	/* use ldo-enable, u-boot will check it and configure */
+	fsl,ldo-bypass = <0>;
+	/* watchdog select of reset source */
+	fsl,wdog-reset = <1>;
+};
+
+/* I2C to PMIC and FAN54063*/
+&i2c1 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c1>;
+	status = "okay";
+
+	battery_charger: fan54063@6b {
+		compatible = "fairchild,fan54063";
+		reg=<0x6b>;
+
+		gpio-stat = <&gpio1 25 0>;
+		gpio-pok = <&gpio1 26 0>;
+	};
+
+	pmic: pfuze3000@08 {
+		compatible = "fsl,pfuze3000";
+		reg = <0x08>;
+
+		regulators {
+			sw1a_reg: sw1a {
+				regulator-min-microvolt = <700000>;
+				regulator-max-microvolt = <1475000>;
+				regulator-boot-on;
+				regulator-always-on;
+				regulator-ramp-delay = <6250>;
+			};
+
+			sw1b_reg: sw1b {
+				regulator-min-microvolt = <700000>;
+				regulator-max-microvolt = <1475000>;
+				regulator-boot-on;
+				regulator-always-on;
+				regulator-ramp-delay = <6250>;
+			};
+
+			sw2_reg: sw2 {
+				regulator-min-microvolt = <2500000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			sw3a_reg: sw3 {
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <1650000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			swbst_reg: swbst {
+				regulator-min-microvolt = <5000000>;
+				regulator-max-microvolt = <5150000>;
+			};
+
+			snvs_reg: vsnvs {
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			vref_reg: vrefddr {
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			vgen1_reg: vldo1 {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+
+			vgen2_reg: vldo2 {
+				regulator-min-microvolt = <800000>;
+				regulator-max-microvolt = <1550000>;
+			};
+
+			vgen3_reg: vccsd {
+				regulator-min-microvolt = <2850000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+
+			vgen4_reg: v33 {
+				regulator-min-microvolt = <2850000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+
+			vgen5_reg: vldo3 {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+
+			vgen6_reg: vldo4 {
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+		};
+	};
+};
+
+/* I2C to Audio board */
+&i2c2 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c2>;
+	status = "okay";
+};
+
+
+/* SSI for AK4621 */
+&ssi2 {
+	fsl,mode = "i2s-master";
+	assigned-clocks = <&clks IMX6SL_CLK_SSI2_SEL>,
+			  <&clks IMX6SL_CLK_SSI2>;
+	assigned-clock-parents = <&clks IMX6SL_CLK_PLL4_AUDIO_DIV>;
+	assigned-clock-rates = <2>, <24576000>;
+	status = "okay";
+};
+
+/* serial console */
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart1>;
+	status = "okay";
+};
+
+/* Bluetooth interface to Murata */
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart2>;
+	fsl,uart-has-rtscts;
+	status = "okay";
+};
+
+/* microSD card */
+&usdhc1 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc1>;
+	pinctrl-1 = <&pinctrl_usdhc1_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc1_200mhz>;
+	bus-width = <4>;
+	/* cd-gpios = <&gpio1 23 0>; */
+	/*fsl,cd-controller;*/
+	/*fsl,wp-controller;*/
+	/* TODO: what do we think about these? */
+	keep-power-in-suspend;
+	enable-sdio-wakeup;
+	status = "okay";
+};
+
+/* eMMC */
+&usdhc2 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc2>;
+	pinctrl-1 = <&pinctrl_usdhc2_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc2_200mhz>;
+	bus-width = <8>;
+	non-removable;
+	no-1-8-v;
+	/*full-pwr-cycle;*/
+	keep-power-in-suspend;
+	status = "okay";
+};
+
+/* Murata WiFi */
+&usdhc3 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc3>;
+	pinctrl-1 = <&pinctrl_usdhc3_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc3_200mhz>;
+	bus-width = <4>; /* 4-bit SDIO; default is 8; MUX other 4 pins for UART4. */
+	non-removable;
+	no-1-8-v;	/* Murata - force 3.3V signaling. */
+	keep-power-in-suspend;
+	enable-sdio-wakeup;
+	wifi-host; /* Murata */
+	status = "okay";
+};
+
+/* Debug board USB */
+&usbotg1 {
+	/*vbus-supply = <&reg_usb_otg1_vbus>;*/
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usbotg1>;
+	disable-over-current;
+	dr_mode = "otg";
+	srp-disable;
+	hnp-disable;
+	adp-disable;
+	status = "okay";
+};
+
+/* CPU board USB */
+&usbotg2 {
+	vbus-supply = <&reg_usb_otg2_vbus>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usbotg2>;
+	disable-over-current;
+	dr_mode = "otg";
+	srp-disable;
+	hnp-disable;
+	adp-disable;
+	status = "okay";
+};
+
+/* Disabled subsystems */
+&kpp { status = "disabled";};
+&pwm1 { status = "disabled";};
+&pwm2 { status = "disabled";};
+&pwm3 { status = "disabled";};
+&pwm4 { status = "disabled";};
+&epdc { status = "disabled";};
+&gpu { status = "disabled";};
+
+/* Pin mux */
+&iomuxc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_hog>;
+
+	imx6sl-evk {
+		pinctrl_hog: hoggrp {
+			fsl,pins = <
+				/* GPIO for Atmel->IMX comms interrupt */
+				MX6SL_PAD_LCD_CLK__GPIO2_IO15    0x110b0 /* Atmel->IMX IRQ line */
+				MX6SL_PAD_LCD_ENABLE__GPIO2_IO16 0x100b0 /* SWCLK */
+				MX6SL_PAD_LCD_HSYNC__GPIO2_IO17  0x100b0 /* SWDIO */
+				MX6SL_PAD_LCD_VSYNC__GPIO2_IO18  0x110b0 /* SRST */
+
+				/* GPIO for overtemp and VIN monitor */
+				MX6SL_PAD_EPDC_D5__GPIO1_IO12 0x110b0 /* overtemp_top */
+				MX6SL_PAD_EPDC_D6__GPIO1_IO13 0x110b0 /* overtemp_bottom */
+				MX6SL_PAD_EPDC_D7__GPIO1_IO14 0x110b0 /* vin_monitor */
+
+				/* TODO: set pads correct for all these GPIOs */
+				/* Power related GPIOs */
+				MX6SL_PAD_EPDC_SDLE__GPIO1_IO24  0x110b0 /* SEL_VBUS_H */
+				MX6SL_PAD_EPDC_SDOE__GPIO1_IO25  0x1f0b0 /* BATT_CHARGE_STAT_GPIO_B */
+				MX6SL_PAD_EPDC_SDSHR__GPIO1_IO26 0x1f0b0 /* BATT_POWER_OK_GPIO_B */
+
+				/* GPIO for controlling the USB OTG2 power */
+				MX6SL_PAD_KEY_COL5__GPIO4_IO02	0x80000000
+
+				/* Audio GPIOs */
+				MX6SL_PAD_EPDC_SDCE1__GPIO1_IO28    0x110b0 /* Audio GPIO  0 - OUT: HEADPHONE_MUTLE_L */
+				MX6SL_PAD_EPDC_SDCE2__GPIO1_IO29    0x110b0 /* Audio GPIO  1 - OUT: CODEC_RESET_L */
+				MX6SL_PAD_EPDC_SDCE3__GPIO1_IO30    0x110b0 /* Audio GPIO  2 - OUT: CODEC_PWR_ENABLE (unused) */
+				MX6SL_PAD_EPDC_GDCLK__GPIO1_IO31    0x110b0 /* Audio GPIO  3 - OUT: AUDIO_POWER_EN */
+				MX6SL_PAD_EPDC_GDOE__GPIO2_IO00     0x110b0 /* Audio GPIO  4 - OUT: THAT_PGA_RESET_L */
+				MX6SL_PAD_EPDC_GDRL__GPIO2_IO01     0x110b0 /* Audio GPIO  5 -  IN: FRONT_HEADPHONE_IN_USE */
+				MX6SL_PAD_EPDC_GDSP__GPIO2_IO02     0x110b0 /* Audio GPIO  6 -  IN: REAR_HEADPHONE_IN_USE */
+				MX6SL_PAD_EPDC_VCOM0__GPIO2_IO03    0x110b0 /* Audio GPIO  7 -  IN: CH1_XLR_PLUGGED_IN_L */
+				MX6SL_PAD_EPDC_VCOM1__GPIO2_IO04    0x110b0 /* Audio GPIO  8 -  IN: CH1_TRS_PLUGGED_IN_L */
+				MX6SL_PAD_EPDC_BDR0__GPIO2_IO05     0x110b0 /* Audio GPIO  9 -  IN: CH2_XLR_PLUGGED_IN_L */
+				MX6SL_PAD_EPDC_BDR1__GPIO2_IO06     0x110b0 /* Audio GPIO 10 -  IN: CH2_TRS_PLUGGED_IN_L */
+				MX6SL_PAD_EPDC_PWRCTRL0__GPIO2_IO07 0x110b0 /* Audio GPIO 11 -  IN: PHANTOM_SW_ON */
+				MX6SL_PAD_EPDC_PWRCTRL1__GPIO2_IO08 0x110b0 /* Audio GPIO 12 -  IN: RCH_OVFL_ZERO */
+				MX6SL_PAD_EPDC_PWRCTRL2__GPIO2_IO09 0x110b0 /* Audio GPIO 13 -  IN: LCH_OVFL_ZERO */
+				MX6SL_PAD_EPDC_PWRCTRL3__GPIO2_IO10 0x110b0 /* Audio GPIO 14 -  IN: AUDIO_PWR_OK */
+
+				/* WiFi chip GPIOs */
+				MX6SL_PAD_KEY_ROW0__GPIO3_IO25 0x13069 /* WIFI_HOST_WAKE */
+				MX6SL_PAD_KEY_ROW1__GPIO3_IO27 0x13069 /* WIFI_BT_REG_ON */
+				MX6SL_PAD_KEY_ROW2__GPIO3_IO29 0x13069 /* WIFI_WL_REG_ON */
+
+				/* 32khz for the Murata WiFi */
+				MX6SL_PAD_REF_CLK_32K__XTALOSC_REF_CLK_32K 0x110b0 /* TODO: revisit the pad settings */
+
+				/* GPIOs to debug board LEDs */
+				MX6SL_PAD_LCD_DAT5__GPIO2_IO25  0x110b0 /* LED 0 */
+				MX6SL_PAD_LCD_DAT11__GPIO2_IO31 0x110b0 /* LED 1 */
+				MX6SL_PAD_LCD_DAT13__GPIO3_IO01 0x110b0 /* LED 2 */
+			>;
+		};
+
+		pinctrl_audmux: audmuxgrp {
+			fsl,pins = <
+				/* ext port 3 for AK4621 */
+				MX6SL_PAD_AUD_RXD__AUD3_RXD       0x130b0
+				MX6SL_PAD_AUD_TXC__AUD3_TXC       0x130b0
+				MX6SL_PAD_AUD_TXD__AUD3_TXD       0x110b0
+				MX6SL_PAD_AUD_TXFS__AUD3_TXFS     0x130b0
+				MX6SL_PAD_AUD_MCLK__AUDIO_CLK_OUT 0x130b0
+				/* Int port ?, ext port 4 for I2S/PCM to bluetooth */
+				MX6SL_PAD_ECSPI1_SCLK__AUD4_TXD  0x130b0
+				MX6SL_PAD_ECSPI1_MOSI__AUD4_TXC  0x130b0
+				MX6SL_PAD_ECSPI1_MISO__AUD4_TXFS 0x130b0
+				MX6SL_PAD_ECSPI1_SS0__AUD4_RXD   0x130b0
+			>;
+		};
+
+		/* UART1: Linux serial terminal */
+		pinctrl_uart1: uart1grp {
+			fsl,pins = <
+				MX6SL_PAD_UART1_RXD__UART1_RX_DATA 0x1b0b1
+				MX6SL_PAD_UART1_TXD__UART1_TX_DATA 0x1b0b1
+			>;
+		};
+
+		/* I2C1: PMIC control */
+		pinctrl_i2c1: i2c1grp {
+			fsl,pins = <
+				MX6SL_PAD_I2C1_SCL__I2C1_SCL 0x4001b8b1
+				MX6SL_PAD_I2C1_SDA__I2C1_SDA 0x4001b8b1
+			>;
+		};
+
+		/* I2C2: audio board control */
+		pinctrl_i2c2: i2c2grp {
+			fsl,pins = <
+				MX6SL_PAD_I2C2_SCL__I2C2_SCL 0x4001b8b1
+				MX6SL_PAD_I2C2_SDA__I2C2_SDA 0x4001b8b1
+			>;
+		};
+
+		/* SPI2: audio board SPI */
+		pinctrl_ecspi2: ecspi2grp {
+			fsl,pins = <
+				MX6SL_PAD_ECSPI2_MISO__ECSPI2_MISO   0x100b1
+				MX6SL_PAD_ECSPI2_MOSI__ECSPI2_MOSI   0x100b1
+				MX6SL_PAD_ECSPI2_SCLK__ECSPI2_SCLK   0x100b1
+				/* Note: SS is handed by GPIO, not ECSPI module */
+				MX6SL_PAD_ECSPI2_SS0__GPIO4_IO15 0x170b1 /* SS0 */
+				MX6SL_PAD_EPDC_SDCE0__GPIO1_IO27 0x170b1 /* SS1 */
+			>;
+		};
+
+		/* Fast Ethernet Controller (verbaitum from imx6slevk board) */
+		pinctrl_fec: fecgrp {
+			fsl,pins = <
+				MX6SL_PAD_FEC_MDC__FEC_MDC         0x1b0b0
+				MX6SL_PAD_FEC_MDIO__FEC_MDIO       0x1b0b0
+				MX6SL_PAD_FEC_CRS_DV__FEC_RX_DV    0x1b0b0
+				MX6SL_PAD_FEC_RXD0__FEC_RX_DATA0   0x1b0b0
+				MX6SL_PAD_FEC_RXD1__FEC_RX_DATA1   0x1b0b0
+				MX6SL_PAD_FEC_TX_EN__FEC_TX_EN     0x1b0b0
+				MX6SL_PAD_FEC_TXD0__FEC_TX_DATA0   0x1b0b0
+				MX6SL_PAD_FEC_TXD1__FEC_TX_DATA1   0x1b0b0
+				MX6SL_PAD_FEC_REF_CLK__FEC_REF_OUT 0x4001b0a8
+			>;
+		};
+
+		/* Fast Ethernet Controller sleep (verbaitum from imx6slevk board) */
+		pinctrl_fec_sleep: fecgrp-sleep {
+			fsl,pins = <
+				MX6SL_PAD_FEC_MDC__GPIO4_IO23     0x3080
+				MX6SL_PAD_FEC_MDIO__GPIO4_IO20    0x3080
+				MX6SL_PAD_FEC_CRS_DV__GPIO4_IO25  0x3080
+				MX6SL_PAD_FEC_RXD0__GPIO4_IO17    0x3080
+				MX6SL_PAD_FEC_RXD1__GPIO4_IO18    0x3080
+				MX6SL_PAD_FEC_TX_EN__GPIO4_IO22   0x3080
+				MX6SL_PAD_FEC_TXD0__GPIO4_IO24    0x3080
+				MX6SL_PAD_FEC_TXD1__GPIO4_IO16    0x3080
+				MX6SL_PAD_FEC_REF_CLK__GPIO4_IO26 0x3080
+			>;
+		};
+
+		/* SPI4: front panel Atmel comms */
+		pinctrl_ecspi4: ecspi4grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_D0__ECSPI4_MOSI 0x100b1
+				MX6SL_PAD_EPDC_D1__ECSPI4_MISO 0x100b1
+				MX6SL_PAD_EPDC_D3__ECSPI4_SCLK 0x100b1
+				/* Note: SS is handled by GPIO, not ECSPI module */
+				MX6SL_PAD_EPDC_D2__GPIO1_IO09  0x100b1
+			>;
+		};
+
+		/* SPI3: NOR boot flash */
+		pinctrl_ecspi3: ecspi3grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_D8__ECSPI3_MOSI  0x100b1
+				MX6SL_PAD_EPDC_D9__ECSPI3_MISO  0x100b1
+				MX6SL_PAD_EPDC_D11__ECSPI3_SCLK 0x100b1
+				/* Note: SS is handled by GPIO, not ECSPI module */
+				MX6SL_PAD_EPDC_D10__GPIO1_IO17  0x100b1
+			>;
+		};
+
+		/* USB OTG1, debug board USB */
+		pinctrl_usbotg1: usbotg1grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_PWRCOM__USB_OTG1_ID	0x17059
+			>;
+		};
+
+		/* USB OTG2: cpu board USB */
+		pinctrl_usbotg2: usbotg2grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_PWRINT__USB_OTG2_ID	0x17059
+			>;
+		};
+
+		/* UART2: bluetooth uart */
+		pinctrl_uart2: uart2grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_D12__UART2_RX_DATA 0x1b0b1
+				MX6SL_PAD_EPDC_D13__UART2_TX_DATA 0x1b0b1
+				MX6SL_PAD_EPDC_D14__UART2_RTS_B   0x1b0b1
+				MX6SL_PAD_EPDC_D15__UART2_CTS_B   0x1b0b1
+			>;
+		};
+
+		/* uSDHC1: microSD card slot */
+		pinctrl_usdhc1: usdhc1grp {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_SDCLK__GPIO1_IO23 0x110b0 /* Card Detect GPIO */
+				MX6SL_PAD_SD1_CMD__SD1_CMD       0x17059
+				MX6SL_PAD_SD1_CLK__SD1_CLK       0x10059
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0    0x17059
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1    0x17059
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2    0x17059
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3    0x17059
+			>;
+		};
+
+		pinctrl_usdhc1_100mhz: usdhc1grp100mhz {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_SDCLK__GPIO1_IO23 0x110b0 /* Card Detect GPIO */
+				MX6SL_PAD_SD1_CMD__SD1_CMD       0x170b9
+				MX6SL_PAD_SD1_CLK__SD1_CLK       0x100b9
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0    0x170b9
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1    0x170b9
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2    0x170b9
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3    0x170b9
+			>;
+		};
+
+		pinctrl_usdhc1_200mhz: usdhc1grp200mhz {
+			fsl,pins = <
+				MX6SL_PAD_EPDC_SDCLK__GPIO1_IO23 0x110b0 /* Card Detect GPIO */
+				MX6SL_PAD_SD1_CMD__SD1_CMD       0x170f9
+				MX6SL_PAD_SD1_CLK__SD1_CLK       0x100f9
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0    0x170f9
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1    0x170f9
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2    0x170f9
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3    0x170f9
+			>;
+		};
+
+		/* uSDHC2: eMMC */
+		pinctrl_usdhc2: usdhc2grp {
+			fsl,pins = <
+				MX6SL_PAD_SD2_CMD__SD2_CMD    0x17059
+				MX6SL_PAD_SD2_CLK__SD2_CLK    0x10059
+				MX6SL_PAD_SD2_RST__SD2_RESET  0x17059
+				MX6SL_PAD_SD2_DAT0__SD2_DATA0 0x17059
+				MX6SL_PAD_SD2_DAT1__SD2_DATA1 0x17059
+				MX6SL_PAD_SD2_DAT2__SD2_DATA2 0x17059
+				MX6SL_PAD_SD2_DAT3__SD2_DATA3 0x17059
+				MX6SL_PAD_SD2_DAT4__SD2_DATA4 0x17059
+				MX6SL_PAD_SD2_DAT5__SD2_DATA5 0x17059
+				MX6SL_PAD_SD2_DAT6__SD2_DATA6 0x17059
+				MX6SL_PAD_SD2_DAT7__SD2_DATA7 0x17059
+			>;
+		};
+
+		pinctrl_usdhc2_100mhz: usdhc2grp100mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD2_CMD__SD2_CMD    0x170b9
+				MX6SL_PAD_SD2_CLK__SD2_CLK    0x100b9
+				MX6SL_PAD_SD2_RST__SD2_RESET  0x170b9
+				MX6SL_PAD_SD2_DAT0__SD2_DATA0 0x170b9
+				MX6SL_PAD_SD2_DAT1__SD2_DATA1 0x170b9
+				MX6SL_PAD_SD2_DAT2__SD2_DATA2 0x170b9
+				MX6SL_PAD_SD2_DAT3__SD2_DATA3 0x170b9
+				MX6SL_PAD_SD2_DAT4__SD2_DATA4 0x170b9
+				MX6SL_PAD_SD2_DAT5__SD2_DATA5 0x170b9
+				MX6SL_PAD_SD2_DAT6__SD2_DATA6 0x170b9
+				MX6SL_PAD_SD2_DAT7__SD2_DATA7 0x170b9
+			>;
+		};
+
+		pinctrl_usdhc2_200mhz: usdhc2grp200mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD2_CMD__SD2_CMD    0x170f9
+				MX6SL_PAD_SD2_CLK__SD2_CLK    0x100f9
+				MX6SL_PAD_SD2_RST__SD2_RESET  0x170f9
+				MX6SL_PAD_SD2_DAT0__SD2_DATA0 0x170f9
+				MX6SL_PAD_SD2_DAT1__SD2_DATA1 0x170f9
+				MX6SL_PAD_SD2_DAT2__SD2_DATA2 0x170f9
+				MX6SL_PAD_SD2_DAT3__SD2_DATA3 0x170b9
+				MX6SL_PAD_SD2_DAT4__SD2_DATA4 0x170b9
+				MX6SL_PAD_SD2_DAT5__SD2_DATA5 0x170b9
+				MX6SL_PAD_SD2_DAT6__SD2_DATA6 0x170b9
+				MX6SL_PAD_SD2_DAT7__SD2_DATA7 0x170b9
+			>;
+		};
+
+		/* uSDHC3: Murata SDIO WiFi */
+		pinctrl_usdhc3: usdhc3grp {
+			fsl,pins = <
+				MX6SL_PAD_SD3_CMD__SD3_CMD     0x17059
+				MX6SL_PAD_SD3_CLK__SD3_CLK     0x10059
+				MX6SL_PAD_SD3_DAT0__SD3_DATA0  0x17059
+				MX6SL_PAD_SD3_DAT1__SD3_DATA1  0x17059
+				MX6SL_PAD_SD3_DAT2__SD3_DATA2  0x17059
+				MX6SL_PAD_SD3_DAT3__SD3_DATA3  0x17059
+			>;
+		};
+
+		pinctrl_usdhc3_100mhz: usdhc3grp100mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD3_CMD__SD3_CMD     0x170b9
+				MX6SL_PAD_SD3_CLK__SD3_CLK     0x100b9
+				MX6SL_PAD_SD3_DAT0__SD3_DATA0  0x170b9
+				MX6SL_PAD_SD3_DAT1__SD3_DATA1  0x170b9
+				MX6SL_PAD_SD3_DAT2__SD3_DATA2  0x170b9
+				MX6SL_PAD_SD3_DAT3__SD3_DATA3  0x170b9
+			>;
+		};
+
+		pinctrl_usdhc3_200mhz: usdhc3grp200mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD3_CMD__SD3_CMD    0x170f9
+				MX6SL_PAD_SD3_CLK__SD3_CLK    0x100f9
+				MX6SL_PAD_SD3_DAT0__SD3_DATA0 0x170f9
+				MX6SL_PAD_SD3_DAT1__SD3_DATA1 0x170f9
+				MX6SL_PAD_SD3_DAT2__SD3_DATA2 0x170f9
+				MX6SL_PAD_SD3_DAT3__SD3_DATA3 0x170f9
+			>;
+		};
+	};
+};

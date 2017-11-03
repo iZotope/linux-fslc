@@ -36,6 +36,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_AK4104 if SPI_MASTER
 	select SND_SOC_AK4535 if I2C
 	select SND_SOC_AK4554
+	select SND_SOC_AK4621 if SPI_MASTER
 	select SND_SOC_AK4641 if I2C
 	select SND_SOC_AK4642 if I2C
 	select SND_SOC_AK4671 if I2C
@@ -105,6 +106,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_TAS2552 if I2C
 	select SND_SOC_TAS5086 if I2C
 	select SND_SOC_TFA9879 if I2C
+	select SND_SOC_THAT5173 if SPI_MASTER
 	select SND_SOC_TLV320AIC23_I2C if I2C
 	select SND_SOC_TLV320AIC23_SPI if SPI_MASTER
 	select SND_SOC_TLV320AIC26 if SPI_MASTER
@@ -311,6 +313,9 @@ config SND_SOC_AK4535
 
 config SND_SOC_AK4554
 	tristate "AKM AK4554 CODEC"
+
+config SND_SOC_AK4621
+	tristate
 
 config SND_SOC_AK4641
 	tristate
@@ -613,6 +618,9 @@ config SND_SOC_TAS2552
 config SND_SOC_TAS5086
 	tristate "Texas Instruments TAS5086 speaker amplifier"
 	depends on I2C
+
+config SND_SOC_THAT5173
+	tristate
 
 config SND_SOC_TFA9879
 	tristate "NXP Semiconductors TFA9879 amplifier"

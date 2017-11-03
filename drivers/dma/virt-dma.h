@@ -110,6 +110,9 @@ static inline void vchan_cyclic_callback(struct virt_dma_desc *vd)
 	tasklet_schedule(&vc->task);
 }
 
+
+void vchan_cyclic_callback_synch(struct virt_dma_desc *vd);
+
 /**
  * vchan_next_desc - peek at the next descriptor to be processed
  * vc: virtual channel to obtain descriptor from

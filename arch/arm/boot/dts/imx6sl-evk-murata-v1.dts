@@ -1,0 +1,97 @@
+/*
+ * Copyright (C) 2014-2015 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+/* NOTE: This DTS file is written for plugging in Murata Wi-Fi/BT EVK into Slot SD1 */
+/* and using Murata i.MX InterConnect Ver 1.0 Adapter. Bluetooth UART connect via SD1 EMMC/MMC Plus pinout. */
+/* WL_REG_ON and BT_REG_ON are generated as power-on reset signals on the Ver 1.0 Adapter. */
+/* ==> No hardware modification to i.MX 6SoloLite is required. */
+#include "gamut-r0a.dts"
+
+/ {
+	regulators {
+		/* Murata -- add wlreg_on definition.  WL_REG_ON not defined - signal driven by Ver 1.0 Adapter circuit. */
+		wlreg_on: fixedregulator@100 {
+			compatible = "regulator-fixed";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-name = "wlreg_on";
+		};
+	};
+
+	/* Murata -- define hook for BCMDHD driver.   */
+	/* No GPIO's defined for WL_HOST_WAKE and WL_REG_ON in this configuration. */
+	bcmdhd_wlan_0: bcmdhd_wlan@0 {
+		compatible = "android,bcmdhd_wlan";
+		wlreg_on-supply = <&wlreg_on>;
+	};
+};
+
+&iomuxc {
+	imx6sl-evk-murata-v1 {
+		/* Murata: Only MUX SD1_DAT0..3 lines so UART4 can be MUXed on higher data lines. */
+		pinctrl_usdhc1_1: usdhc1grp-1 {
+			fsl,pins = <
+				MX6SL_PAD_SD1_CMD__SD1_CMD		0x17059
+				MX6SL_PAD_SD1_CLK__SD1_CLK		0x10059
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0		0x17059
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1		0x17059
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2		0x17059
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3		0x17059
+			>;
+		};
+
+		pinctrl_usdhc1_1_100mhz: usdhc1grp-1-100mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD1_CMD__SD1_CMD		0x170b9
+				MX6SL_PAD_SD1_CLK__SD1_CLK		0x100b9
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0		0x170b9
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1		0x170b9
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2		0x170b9
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3		0x170b9
+			>;
+		};
+
+		pinctrl_usdhc1_1_200mhz: usdhc1-1-grp200mhz {
+			fsl,pins = <
+				MX6SL_PAD_SD1_CMD__SD1_CMD		0x170f9
+				MX6SL_PAD_SD1_CLK__SD1_CLK		0x100f9
+				MX6SL_PAD_SD1_DAT0__SD1_DATA0		0x170f9
+				MX6SL_PAD_SD1_DAT1__SD1_DATA1		0x170f9
+				MX6SL_PAD_SD1_DAT2__SD1_DATA2		0x170f9
+				MX6SL_PAD_SD1_DAT3__SD1_DATA3		0x170f9
+			>;
+		};
+	}; 
+};
+
+/* Murata: declare UART4 interface for Bluetooth. */
+&uart4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart4_1>;
+	fsl,uart-has-rtscts;
+	status = "okay";
+	/* for DTE mode, add below change */
+	/* fsl,dte-mode; */
+	/* pinctrl-0 = <&pinctrl_uart4dte_1>; */
+};
+
+&usdhc1 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc1_1>;
+	pinctrl-1 = <&pinctrl_usdhc1_1_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc1_1_200mhz>;
+	bus-width = <4>; /* 4-bit SDIO; default is 8; MUX other 4 pins for UART4. */
+	cd-gpios = <&gpio4 7 0>;
+	wp-gpios = <&gpio4 6 0>;
+	no-1-8-v;	/* Murata - force 3.3V signaling. */
+	keep-power-in-suspend;
+	enable-sdio-wakeup;
+	wifi-host; /* Murata */
+	status = "okay";
+};
+
